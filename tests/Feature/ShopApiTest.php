@@ -323,6 +323,77 @@ class ShopApiTest extends TestCase
         $this->deleteJson('/api/admin/categories/'.$category['id'])->assertNoContent();
     }
 
+    public function test_admin_can_manage_users_orders_and_view_payments_and_dashboard(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $customer = User::factory()->create(['is_admin' => false, 'telegram_id' => '9988']);
+        $order = $customer->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'paid',
+            'total' => 15.00,
+        ]);
+        $payment = $order->payment()->create([
+            'provider' => 'bakong',
+            'status' => 'paid',
+            'amount' => 15.00,
+            'currency' => 'USD',
+            'khqr_payload' => 'test-khqr',
+            'md5' => md5('test-khqr'),
+            'expires_at' => now()->addMinutes(15),
+            'paid_at' => now(),
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->getJson('/api/admin/dashboard')->assertOk()
+            ->assertJsonPath('counts.users', 2)
+            ->assertJsonPath('counts.orders', 1)
+            ->assertJsonPath('revenue', 15);
+        $this->getJson('/api/admin/users')->assertOk()
+            ->assertJsonStructure(['data' => [['id', 'is_admin', 'orders_count']]]);
+        $this->patchJson('/api/admin/users/'.$customer->id, ['is_admin' => true])
+            ->assertOk()->assertJsonPath('is_admin', true);
+        $this->getJson('/api/admin/orders')->assertOk()
+            ->assertJsonPath('data.0.id', $order->id);
+        $this->patchJson('/api/admin/orders/'.$order->id, ['status' => 'processing'])
+            ->assertOk()->assertJsonPath('status', 'processing');
+        $this->getJson('/api/admin/payments')->assertOk()
+            ->assertJsonPath('data.0.id', $payment->id)
+            ->assertJsonMissing(['khqr_payload', 'provider_response']);
+    }
+
+    public function test_admin_cannot_fake_payment_or_remove_own_role(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $customer = User::factory()->create(['is_admin' => false]);
+        $order = $customer->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 5.00,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $this->patchJson('/api/admin/orders/'.$order->id, ['status' => 'paid'])
+            ->assertUnprocessable();
+        $this->patchJson('/api/admin/users/'.$admin->id, ['is_admin' => false])
+            ->assertUnprocessable();
+        $this->postJson('/api/admin/payments', ['status' => 'paid'])->assertMethodNotAllowed();
+    }
+
+    public function test_database_admin_role_persists_across_telegram_sign_in(): void
+    {
+        $initData = $this->telegramInitData(445566, 'Shop', 'Admin');
+        User::factory()->create([
+            'telegram_id' => '445566',
+            'email' => '445566@telegram.local',
+            'is_admin' => true,
+        ]);
+
+        $this->postJson('/api/auth/telegram', ['init_data' => $initData])
+            ->assertOk()
+            ->assertJsonPath('user.is_admin', true);
+        $this->assertDatabaseHas('users', ['telegram_id' => '445566', 'is_admin' => true]);
+    }
+
     private function telegramInitData(int $id, string $firstName, string $lastName): string
     {
         $fields = [

@@ -25,11 +25,14 @@ class AuthController extends Controller
         ]))) ?: ($telegramUser['username'] ?? 'Telegram User');
 
         $user = User::query()->firstOrNew(['telegram_id' => $telegramId]);
-        $user->fill([
+        $profile = [
             'name' => Str::limit($name, 255, ''),
             'email' => $telegramId.'@telegram.local',
-            'is_admin' => in_array($telegramId, config('services.telegram.admin_ids', []), true),
-        ]);
+        ];
+        if (! $user->exists || in_array($telegramId, config('services.telegram.admin_ids', []), true)) {
+            $profile['is_admin'] = in_array($telegramId, config('services.telegram.admin_ids', []), true);
+        }
+        $user->fill($profile);
         if (! $user->exists) {
             $user->password = Hash::make(Str::random(64));
         }

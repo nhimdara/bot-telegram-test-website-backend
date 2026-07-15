@@ -1,7 +1,11 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\Admin\ProductController as AdminProductController;
+use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
@@ -37,7 +41,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/profile', [AuthController::class, 'profile']);
 
     Route::prefix('admin')->middleware('admin')->group(function () {
+        Route::get('dashboard', AdminDashboardController::class);
         Route::apiResource('categories', AdminCategoryController::class);
         Route::apiResource('products', AdminProductController::class);
+        Route::apiResource('orders', AdminOrderController::class)->only(['index', 'show', 'update']);
+        Route::apiResource('users', AdminUserController::class)->only(['index', 'show', 'update', 'destroy']);
+        Route::apiResource('payments', AdminPaymentController::class)->only(['index', 'show']);
     });
 });

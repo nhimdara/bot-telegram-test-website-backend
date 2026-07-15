@@ -44,3 +44,13 @@ Authenticated endpoints:
 - `GET /api/profile`
 
 Run the test suite with `php artisan test`.
+
+## Docker
+
+After configuring `.env`, build and start the API:
+
+```powershell
+docker compose up --build
+```
+
+The API will be available at `http://localhost:8000`. SQLite data and Laravel storage are kept in named Docker volumes. Migrations run automatically when the container starts.

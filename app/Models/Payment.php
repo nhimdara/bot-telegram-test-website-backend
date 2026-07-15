@@ -18,6 +18,11 @@ class Payment extends Model
         'md5',
         'transaction_hash',
         'provider_response',
+        'payway_qr_string',
+        'payway_qr_image',
+        'payway_deeplink',
+        'payway_app_store',
+        'payway_play_store',
         'expires_at',
         'paid_at',
     ];

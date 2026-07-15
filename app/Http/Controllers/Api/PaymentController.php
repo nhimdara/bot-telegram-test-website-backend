@@ -120,6 +120,78 @@ class PaymentController extends Controller
         return $this->paymentResponse($payment, 201, ['checkout' => $checkout]);
     }
 
+    public function storePayWayQr(Request $request, Order $order, AbaPayWay $payWay): JsonResponse
+    {
+        $this->ensureOrderOwnership($request, $order);
+
+        if ($order->payment?->status === 'paid') {
+            return $this->paymentResponse($order->payment);
+        }
+        abort_unless($order->status === 'pending', 422, 'Only pending orders can be paid.');
+
+        try {
+            $payWay->ensureConfigured();
+            $currency = strtoupper((string) config('services.payway.currency', 'USD'));
+            abort_unless(in_array($currency, ['USD', 'KHR'], true), 503, 'PAYWAY_CURRENCY must be USD or KHR.');
+            $amount = $this->paymentAmount((float) $order->total, $currency);
+        } catch (RuntimeException $exception) {
+            abort(503, $exception->getMessage());
+        }
+
+        $existing = $order->payment;
+        if ($existing?->provider === 'payway'
+            && $existing->status === 'pending'
+            && $existing->expires_at->isFuture()
+            && $existing->payway_qr_string) {
+            return $this->paymentResponse($existing);
+        }
+
+        $reference = $existing?->provider === 'payway'
+            ? $existing->provider_reference
+            : null;
+        $reference = $reference ?: 'PW'.$order->id.Str::upper(Str::random(10));
+        $lifetime = max(1, (int) config('services.payway.qr_lifetime', 15));
+
+        $payment = Payment::query()->updateOrCreate(
+            ['order_id' => $order->id],
+            [
+                'provider' => 'payway',
+                'provider_reference' => mb_substr($reference, 0, 20),
+                'status' => 'pending',
+                'amount' => $amount,
+                'currency' => $currency,
+                'khqr_payload' => null,
+                'md5' => null,
+                'transaction_hash' => null,
+                'provider_response' => null,
+                'payway_qr_string' => null,
+                'payway_qr_image' => null,
+                'payway_deeplink' => null,
+                'payway_app_store' => null,
+                'payway_play_store' => null,
+                'expires_at' => now()->addMinutes($lifetime),
+                'paid_at' => null,
+            ]
+        );
+
+        try {
+            $qr = $payWay->generateQr($payment, $order);
+        } catch (RuntimeException $exception) {
+            $payment->delete();
+            abort(502, $exception->getMessage());
+        }
+
+        $payment->update([
+            'payway_qr_string' => $qr['qrString'],
+            'payway_qr_image' => $qr['qrImage'] ?? null,
+            'payway_deeplink' => $qr['abapay_deeplink'] ?? null,
+            'payway_app_store' => $qr['app_store'] ?? null,
+            'payway_play_store' => $qr['play_store'] ?? null,
+        ]);
+
+        return $this->paymentResponse($payment->fresh(), 201);
+    }
+
     public function show(Request $request, Payment $payment): JsonResponse
     {
         $this->ensurePaymentOwnership($request, $payment);
@@ -348,6 +420,14 @@ class PaymentController extends Controller
                 'md5' => $payment->md5,
                 'khqr' => $payment->khqr_payload,
                 'qr_url' => route('payments.qr', $payment),
+            ];
+        } elseif ($payment->provider === 'payway' && $payment->payway_qr_string) {
+            $data['qr'] = [
+                'string' => $payment->payway_qr_string,
+                'image' => $payment->payway_qr_image,
+                'deeplink' => $payment->payway_deeplink,
+                'app_store' => $payment->payway_app_store,
+                'play_store' => $payment->payway_play_store,
             ];
         }
 

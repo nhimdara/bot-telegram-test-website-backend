@@ -42,8 +42,11 @@ Authenticated endpoints:
 - `GET /api/orders` and `GET /api/orders/{id}`
 - `POST /api/orders/{id}/cancel`
 - `POST /api/orders/{id}/payment` creates or returns a pending Bakong KHQR payment
+- `POST /api/orders/{id}/payway-qr` creates or returns an ABA PayWay dynamic QR
+- `POST /api/orders/{id}/payway-payment` creates a PayWay hosted-checkout request
 - `GET /api/payments/{id}` and `GET /api/payments/{id}/qr`
 - `POST /api/payments/{id}/check` verifies payment directly with Bakong
+- `POST /api/payments/{id}/payway-check` verifies payment directly with PayWay
 - `GET /api/profile`
 
 Administrator endpoints require a user whose Telegram ID is listed in `TELEGRAM_ADMIN_IDS`:
@@ -80,3 +83,9 @@ On Render, attach a managed PostgreSQL database and set its internal connection 
 Register at the Bakong Open API portal and configure `BAKONG_TOKEN`, `BAKONG_ACCOUNT_ID`, and `BAKONG_MERCHANT_NAME`. Optional merchant-mode fields are `BAKONG_MERCHANT_ID` and `BAKONG_ACQUIRING_BANK`; provide both together. The configured `BAKONG_CURRENCY` must match the currency used for product prices.
 
 The frontend creates an order first, calls `POST /api/orders/{id}/payment`, displays the authenticated `qr_url` response, and polls `POST /api/payments/{id}/check`. A frontend callback alone never marks an order paid; the backend verifies the MD5 with Bakong and validates recipient, currency, and amount.
+
+## ABA PayWay QR
+
+Register a PayWay sandbox merchant, ask PayWay to whitelist the deployed API domain, and configure `PAYWAY_MERCHANT_ID`, `PAYWAY_API_KEY`, and `PAYWAY_ENABLED=true`. Set `APP_URL` to the public HTTPS URL of this Laravel API so PayWay can reach the signed callback. Keep `PAYWAY_BASE_URL=https://checkout-sandbox.payway.com.kh` until production credentials are issued.
+
+After creating an order, call `POST /api/orders/{id}/payway-qr` with the user's bearer token. Display `qr.image` directly as an image data URL, or generate an image from `qr.string`; on mobile, open `qr.deeplink`. Poll `POST /api/payments/{paymentId}/payway-check` until `status` is `paid`. PayWay callbacks are signature-checked and then verified server-to-server before the order is marked paid.

@@ -80,6 +80,73 @@ class AbaPayWay
         ];
     }
 
+    public function generateQr(Payment $payment, Order $order): array
+    {
+        $this->ensureConfigured();
+        $order->loadMissing(['items.product', 'user']);
+
+        $nameParts = preg_split('/\s+/u', trim((string) $order->user->name), 2) ?: [];
+        $lifetime = (int) config('services.payway.qr_lifetime', 15);
+        if ($lifetime < 1) {
+            throw new RuntimeException('PAYWAY_QR_LIFETIME must be at least 1 minute.');
+        }
+
+        $callbackUrl = URL::temporarySignedRoute(
+            'payway.callback',
+            now()->addMinutes($lifetime + 30),
+            ['payment' => $payment->id]
+        );
+        $items = base64_encode(json_encode($order->items->map(fn ($item) => [
+            'name' => Str::limit((string) ($item->product?->name ?? 'Product'), 60, ''),
+            'quantity' => (int) $item->quantity,
+            'price' => (float) $item->price,
+        ])->values()->all(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        // PayWay signs the concatenated values in the same order as its QR API request.
+        $fields = [
+            'req_time' => now('UTC')->format('YmdHis'),
+            'merchant_id' => (string) config('services.payway.merchant_id'),
+            'tran_id' => $payment->provider_reference,
+            'first_name' => $this->safeName($nameParts[0] ?? 'Customer'),
+            'last_name' => $this->safeName($nameParts[1] ?? 'Shopper'),
+            'email' => (string) ($order->user->email ?? ''),
+            'phone' => '',
+            'amount' => (float) $this->formatAmount($payment->amount, $payment->currency),
+            'purchase_type' => 'purchase',
+            'payment_option' => (string) config('services.payway.qr_payment_option', 'abapay_khqr'),
+            'items' => $items,
+            'currency' => $payment->currency,
+            'callback_url' => base64_encode($callbackUrl),
+            'return_params' => (string) $payment->id,
+            'lifetime' => $lifetime,
+            'qr_image_template' => (string) config('services.payway.qr_image_template', 'template3_color'),
+        ];
+        $fields['hash'] = $this->sign(implode('', array_map(static fn ($value) => (string) $value, $fields)));
+
+        try {
+            $response = Http::acceptJson()
+                ->asJson()
+                ->timeout(15)
+                ->retry(2, 250)
+                ->post(rtrim((string) config('services.payway.base_url'), '/').'/api/payment-gateway/v1/payments/generate-qr', $fields);
+        } catch (ConnectionException) {
+            throw new RuntimeException('Unable to contact ABA PayWay.');
+        }
+
+        $body = $response->json() ?? [];
+        $statusCode = (string) ($body['status']['code'] ?? '');
+        if (! $response->successful() || $statusCode !== '0') {
+            $message = (string) ($body['status']['message'] ?? 'ABA PayWay QR generation failed.');
+            throw new RuntimeException($message !== '' ? $message : 'ABA PayWay QR generation failed.');
+        }
+
+        if (! is_string($body['qrString'] ?? null) || $body['qrString'] === '') {
+            throw new RuntimeException('ABA PayWay returned an invalid QR response.');
+        }
+
+        return $body;
+    }
+
     public function checkTransaction(string $transactionId): array
     {
         $this->ensureConfigured();

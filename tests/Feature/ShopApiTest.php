@@ -254,6 +254,70 @@ class ShopApiTest extends TestCase
         $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'paid']);
     }
 
+    public function test_user_can_generate_an_official_payway_qr(): void
+    {
+        config()->set('services.payway', [
+            'enabled' => true,
+            'merchant_id' => 'test-merchant',
+            'api_key' => 'test-api-key',
+            'base_url' => 'https://checkout-sandbox.payway.test',
+            'currency' => 'USD',
+            'qr_payment_option' => 'abapay_khqr',
+            'qr_lifetime' => 15,
+            'qr_image_template' => 'template3_color',
+            'payment_option' => '',
+            'continue_url' => 'https://shop.example.test/',
+        ]);
+        Http::fake([
+            'https://checkout-sandbox.payway.test/api/payment-gateway/v1/payments/generate-qr' => Http::response([
+                'qrString' => '000201010212PAYWAYKHQR6304ABCD',
+                'qrImage' => 'data:image/png;base64,ZmFrZS1xcg==',
+                'abapay_deeplink' => 'abamobilebank://ababank.com?type=payway',
+                'app_store' => 'https://apps.example/aba',
+                'play_store' => 'https://play.example/aba',
+                'amount' => 8.50,
+                'currency' => 'USD',
+                'status' => ['code' => '0', 'message' => 'Success.'],
+            ]),
+        ]);
+
+        $user = User::factory()->create(['name' => 'Dara Nhim']);
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 8.50,
+        ]);
+
+        $response = $this->postJson('/api/orders/'.$order->id.'/payway-qr')
+            ->assertCreated()
+            ->assertJsonPath('provider', 'payway')
+            ->assertJsonPath('amount', '8.50')
+            ->assertJsonPath('qr.string', '000201010212PAYWAYKHQR6304ABCD')
+            ->assertJsonPath('qr.image', 'data:image/png;base64,ZmFrZS1xcg==')
+            ->assertJsonPath('qr.deeplink', 'abamobilebank://ababank.com?type=payway');
+
+        Http::assertSent(function ($request) use ($response) {
+            $callbackUrl = base64_decode((string) $request['callback_url'], true);
+
+            return $request->url() === 'https://checkout-sandbox.payway.test/api/payment-gateway/v1/payments/generate-qr'
+                && $request->isJson()
+                && $request['merchant_id'] === 'test-merchant'
+                && $request['tran_id'] === $response->json('reference')
+                && $request['payment_option'] === 'abapay_khqr'
+                && $request['currency'] === 'USD'
+                && $request['amount'] === 8.5
+                && is_string($request['hash'])
+                && str_contains((string) $callbackUrl, '/api/payway/callback/'.$response->json('id'));
+        });
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $response->json('id'),
+            'provider' => 'payway',
+            'payway_qr_string' => '000201010212PAYWAYKHQR6304ABCD',
+        ]);
+    }
+
     public function test_payway_checkout_requires_merchant_credentials(): void
     {
         config()->set('services.payway.enabled', false);

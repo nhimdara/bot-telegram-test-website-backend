@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/orders/{order}/payment', [PaymentController::class, 'store']);
     Route::post('/orders/{order}/payway-payment', [PaymentController::class, 'storePayWay']);
+    Route::post('/orders/{order}/payway-qr', [PaymentController::class, 'storePayWayQr']);
     Route::get('/payments/{payment}', [PaymentController::class, 'show']);
     Route::get('/payments/{payment}/qr', [PaymentController::class, 'qr'])->name('payments.qr');
     Route::post('/payments/{payment}/check', [PaymentController::class, 'check']);

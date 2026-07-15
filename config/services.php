@@ -62,10 +62,13 @@ return [
     'payway' => [
         'enabled' => filter_var(env('PAYWAY_ENABLED', false), FILTER_VALIDATE_BOOL),
         'merchant_id' => env('PAYWAY_MERCHANT_ID'),
-        'api_key' => env('PAYWAY_API_KEY'),
+        'api_key' => env('PAYWAY_HMAC_KEY', env('PAYWAY_API_KEY')),
         'base_url' => env('PAYWAY_BASE_URL', 'https://checkout-sandbox.payway.com.kh'),
         'currency' => env('PAYWAY_CURRENCY', 'USD'),
         'payment_option' => env('PAYWAY_PAYMENT_OPTION', ''),
+        'qr_payment_option' => env('PAYWAY_QR_PAYMENT_OPTION', 'abapay_khqr'),
+        'qr_lifetime' => (int) env('PAYWAY_QR_LIFETIME', 15),
+        'qr_image_template' => env('PAYWAY_QR_IMAGE_TEMPLATE', 'template3_color'),
         'continue_url' => env('PAYWAY_CONTINUE_URL', 'http://localhost:5173/'),
     ],
 

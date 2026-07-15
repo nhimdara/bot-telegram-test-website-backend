@@ -54,3 +54,5 @@ docker compose up --build
 ```
 
 The API will be available at `http://localhost:8000`. SQLite data and Laravel storage are kept in named Docker volumes. Migrations run automatically when the container starts.
+
+On managed container platforms such as Render, Apache automatically binds to the runtime `PORT` environment variable. For persistent SQLite data, attach a disk at `/var/www/html/database`, or configure an external database for production.

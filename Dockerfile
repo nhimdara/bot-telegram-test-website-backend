@@ -43,6 +43,7 @@ COPY docker/entrypoint.sh /usr/local/bin/shop-entrypoint
 RUN chmod +x /usr/local/bin/shop-entrypoint \
     && chown -R www-data:www-data storage bootstrap/cache database
 
+# Documentation only; the entrypoint uses the platform-provided PORT when set.
 EXPOSE 80
 
 ENTRYPOINT ["shop-entrypoint"]

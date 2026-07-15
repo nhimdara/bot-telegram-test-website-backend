@@ -59,4 +59,14 @@ return [
         'qr_expiry_minutes' => (int) env('BAKONG_QR_EXPIRY_MINUTES', 15),
     ],
 
+    'payway' => [
+        'enabled' => filter_var(env('PAYWAY_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'merchant_id' => env('PAYWAY_MERCHANT_ID'),
+        'api_key' => env('PAYWAY_API_KEY'),
+        'base_url' => env('PAYWAY_BASE_URL', 'https://checkout-sandbox.payway.com.kh'),
+        'currency' => env('PAYWAY_CURRENCY', 'USD'),
+        'payment_option' => env('PAYWAY_PAYMENT_OPTION', ''),
+        'continue_url' => env('PAYWAY_CONTINUE_URL', 'http://localhost:5173/'),
+    ],
+
 ];

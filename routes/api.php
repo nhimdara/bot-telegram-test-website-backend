@@ -22,6 +22,9 @@ Route::get('/categories/{category}', [CategoryController::class, 'show']);
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
 Route::get('/images/{image}', [ImageController::class, 'show'])->name('images.show');
+Route::post('/payway/callback/{payment}', [PaymentController::class, 'payWayCallback'])
+    ->middleware('signed')
+    ->name('payway.callback');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/cart', [CartController::class, 'show']);
@@ -36,9 +39,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
     Route::post('/orders/{order}/payment', [PaymentController::class, 'store']);
+    Route::post('/orders/{order}/payway-payment', [PaymentController::class, 'storePayWay']);
     Route::get('/payments/{payment}', [PaymentController::class, 'show']);
     Route::get('/payments/{payment}/qr', [PaymentController::class, 'qr'])->name('payments.qr');
     Route::post('/payments/{payment}/check', [PaymentController::class, 'check']);
+    Route::post('/payments/{payment}/payway-check', [PaymentController::class, 'checkPayWay']);
 
     Route::get('/profile', [AuthController::class, 'profile']);
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\AbaPayWay;
 use App\Services\BakongKhqr;
 use Endroid\QrCode\Encoding\Encoding;
 use Endroid\QrCode\ErrorCorrectionLevel;
@@ -16,7 +17,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
 
 class PaymentController extends Controller
 {
@@ -52,6 +55,7 @@ class PaymentController extends Controller
             ['order_id' => $order->id],
             [
                 'provider' => 'bakong',
+                'provider_reference' => null,
                 'status' => 'pending',
                 'amount' => $amount,
                 'currency' => $currency,
@@ -67,6 +71,55 @@ class PaymentController extends Controller
         return $this->paymentResponse($payment, 201);
     }
 
+    public function storePayWay(Request $request, Order $order, AbaPayWay $payWay): JsonResponse
+    {
+        $this->ensureOrderOwnership($request, $order);
+
+        if ($order->payment?->status === 'paid') {
+            return $this->paymentResponse($order->payment);
+        }
+        abort_unless($order->status === 'pending', 422, 'Only pending orders can be paid.');
+
+        try {
+            $payWay->ensureConfigured();
+            $currency = strtoupper((string) config('services.payway.currency', 'USD'));
+            abort_unless(in_array($currency, ['USD', 'KHR'], true), 503, 'PAYWAY_CURRENCY must be USD or KHR.');
+            $amount = $this->paymentAmount((float) $order->total, $currency);
+        } catch (RuntimeException $exception) {
+            abort(503, $exception->getMessage());
+        }
+
+        $existingReference = $order->payment?->provider === 'payway'
+            ? $order->payment->provider_reference
+            : null;
+        $reference = $existingReference ?: 'PW'.$order->id.Str::upper(Str::random(10));
+
+        $payment = Payment::query()->updateOrCreate(
+            ['order_id' => $order->id],
+            [
+                'provider' => 'payway',
+                'provider_reference' => mb_substr($reference, 0, 20),
+                'status' => 'pending',
+                'amount' => $amount,
+                'currency' => $currency,
+                'khqr_payload' => null,
+                'md5' => null,
+                'transaction_hash' => null,
+                'provider_response' => null,
+                'expires_at' => now()->addHours(2),
+                'paid_at' => null,
+            ]
+        );
+
+        try {
+            $checkout = $payWay->checkout($payment, $order);
+        } catch (RuntimeException $exception) {
+            abort(503, $exception->getMessage());
+        }
+
+        return $this->paymentResponse($payment, 201, ['checkout' => $checkout]);
+    }
+
     public function show(Request $request, Payment $payment): JsonResponse
     {
         $this->ensurePaymentOwnership($request, $payment);
@@ -77,6 +130,7 @@ class PaymentController extends Controller
     public function qr(Request $request, Payment $payment, BakongKhqr $khqr): Response
     {
         $this->ensurePaymentOwnership($request, $payment);
+        abort_unless($payment->provider === 'bakong', 404);
         if (! $khqr->matchesConfiguredReceiver($payment->khqr_payload)) {
             $currency = strtoupper(config('services.bakong.currency', 'USD'));
             $orderTotal = (float) $payment->order()->value('total');
@@ -116,6 +170,7 @@ class PaymentController extends Controller
     public function check(Request $request, Payment $payment): JsonResponse
     {
         $this->ensurePaymentOwnership($request, $payment);
+        abort_unless($payment->provider === 'bakong', 404);
         if ($payment->status === 'paid') {
             return $this->paymentResponse($payment);
         }
@@ -163,6 +218,76 @@ class PaymentController extends Controller
         return $this->paymentResponse($payment->fresh());
     }
 
+    public function checkPayWay(Request $request, Payment $payment, AbaPayWay $payWay): JsonResponse
+    {
+        $this->ensurePaymentOwnership($request, $payment);
+        abort_unless($payment->provider === 'payway', 404);
+
+        if ($payment->status === 'paid') {
+            return $this->paymentResponse($payment);
+        }
+
+        try {
+            $body = $payWay->checkTransaction($payment->provider_reference);
+        } catch (RuntimeException $exception) {
+            abort(502, $exception->getMessage());
+        }
+        $this->applyPayWayStatus($payment, $body);
+
+        return $this->paymentResponse($payment->fresh());
+    }
+
+    public function payWayCallback(Request $request, Payment $payment, AbaPayWay $payWay): Response
+    {
+        abort_unless($payment->provider === 'payway', 404);
+        $payload = $request->json()->all();
+        abort_unless(
+            $payWay->callbackSignatureIsValid($payload, $request->header('X-PayWay-HMAC-SHA512')),
+            401,
+            'Invalid ABA PayWay callback signature.'
+        );
+        abort_unless((string) ($payload['tran_id'] ?? '') === $payment->provider_reference, 409);
+
+        try {
+            $body = $payWay->checkTransaction($payment->provider_reference);
+        } catch (RuntimeException $exception) {
+            abort(502, $exception->getMessage());
+        }
+        $this->applyPayWayStatus($payment, $body);
+
+        return response()->noContent();
+    }
+
+    private function applyPayWayStatus(Payment $payment, array $body): void
+    {
+        $transaction = $body['data'] ?? [];
+        $approved = (string) ($body['status']['code'] ?? '') === '00'
+            && strtoupper((string) ($transaction['payment_status'] ?? '')) === 'APPROVED';
+
+        if (! $approved) {
+            $payment->update(['provider_response' => $body]);
+
+            return;
+        }
+
+        $amountMatches = abs((float) ($transaction['original_amount'] ?? -1) - (float) $payment->amount) < 0.001;
+        $currencyMatches = strtoupper((string) ($transaction['payment_currency'] ?? $transaction['original_currency'] ?? '')) === $payment->currency;
+        abort_unless($amountMatches && $currencyMatches, 409, 'ABA PayWay transaction details do not match this payment.');
+
+        DB::transaction(function () use ($payment, $body, $transaction) {
+            $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+            if ($locked->status !== 'paid') {
+                $locked->update([
+                    'status' => 'paid',
+                    'transaction_hash' => $transaction['bank_ref'] ?? $transaction['apv'] ?? null,
+                    'provider_response' => $body,
+                    'paid_at' => now(),
+                ]);
+                $locked->order()->update(['status' => 'paid']);
+            }
+        });
+    }
+
     private function validateTransaction(Payment $payment, array $transaction): void
     {
         $amountMatches = abs((float) ($transaction['amount'] ?? -1) - (float) $payment->amount) < 0.001;
@@ -205,20 +330,27 @@ class PaymentController extends Controller
         abort_unless($payment->order()->where('user_id', $request->user()->id)->exists(), 404);
     }
 
-    private function paymentResponse(Payment $payment, int $status = 200): JsonResponse
+    private function paymentResponse(Payment $payment, int $status = 200, array $extra = []): JsonResponse
     {
-        return response()->json([
+        $data = [
             'id' => $payment->id,
             'order_id' => $payment->order_id,
             'provider' => $payment->provider,
             'status' => $payment->status,
             'amount' => $payment->amount,
             'currency' => $payment->currency,
-            'md5' => $payment->md5,
-            'khqr' => $payment->khqr_payload,
-            'qr_url' => route('payments.qr', $payment),
+            'reference' => $payment->provider_reference,
             'expires_at' => $payment->expires_at,
             'paid_at' => $payment->paid_at,
-        ], $status);
+        ];
+        if ($payment->provider === 'bakong') {
+            $data += [
+                'md5' => $payment->md5,
+                'khqr' => $payment->khqr_payload,
+                'qr_url' => route('payments.qr', $payment),
+            ];
+        }
+
+        return response()->json($data + $extra, $status);
     }
 }

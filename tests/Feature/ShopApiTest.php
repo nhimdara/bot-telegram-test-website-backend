@@ -201,6 +201,75 @@ class ShopApiTest extends TestCase
         $this->getJson('/api/payments/'.$payment['id'])->assertNotFound();
     }
 
+    public function test_user_can_open_payway_checkout_and_verify_an_approved_payment(): void
+    {
+        config()->set('services.payway', [
+            'enabled' => true,
+            'merchant_id' => 'test-merchant',
+            'api_key' => 'test-api-key',
+            'base_url' => 'https://checkout-sandbox.payway.test',
+            'currency' => 'USD',
+            'payment_option' => '',
+            'continue_url' => 'https://shop.example.test/',
+        ]);
+        $user = User::factory()->create(['name' => 'Dara Nhim']);
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 15.25,
+        ]);
+
+        $payment = $this->postJson('/api/orders/'.$order->id.'/payway-payment')
+            ->assertCreated()
+            ->assertJsonPath('provider', 'payway')
+            ->assertJsonPath('amount', '15.25')
+            ->assertJsonPath('checkout.fields.merchant_id', 'test-merchant')
+            ->assertJsonPath('checkout.fields.amount', '15.25')
+            ->assertJsonStructure(['id', 'reference', 'checkout' => ['url', 'fields' => ['hash', 'tran_id']]])
+            ->json();
+
+        $this->assertArrayNotHasKey('khqr', $payment);
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment['id'],
+            'provider' => 'payway',
+            'md5' => null,
+        ]);
+
+        Http::fake([
+            'https://checkout-sandbox.payway.test/api/payment-gateway/v1/payments/check-transaction-2' => Http::response([
+                'data' => [
+                    'payment_status' => 'APPROVED',
+                    'original_amount' => 15.25,
+                    'payment_currency' => 'USD',
+                    'apv' => '123456',
+                ],
+                'status' => ['code' => '00', 'message' => 'Success'],
+            ]),
+        ]);
+
+        $this->postJson('/api/payments/'.$payment['id'].'/payway-check')
+            ->assertOk()
+            ->assertJsonPath('status', 'paid');
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'paid']);
+    }
+
+    public function test_payway_checkout_requires_merchant_credentials(): void
+    {
+        config()->set('services.payway.enabled', false);
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 5,
+        ]);
+
+        $this->postJson('/api/orders/'.$order->id.'/payway-payment')
+            ->assertServiceUnavailable()
+            ->assertJsonPath('message', 'ABA PayWay is not enabled. Set PAYWAY_ENABLED=true after adding your merchant credentials.');
+    }
+
     public function test_individual_account_type_uses_solo_merchant_tag_even_when_merchant_fields_exist(): void
     {
         config()->set('services.bakong.account_type', 'individual');

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
+use App\Services\OrderInventory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -17,13 +18,14 @@ class CartController extends Controller
         return $this->cartResponse($this->userCart($request));
     }
 
-    public function addItem(Request $request): JsonResponse
+    public function addItem(Request $request, OrderInventory $inventory): JsonResponse
     {
         $data = $request->validate([
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'quantity' => ['required', 'integer', 'min:1'],
         ]);
 
+        $inventory->releaseAbandonedForUser($request->user()->id);
         $cart = $this->userCart($request);
         $product = Product::query()->findOrFail($data['product_id']);
         $item = $cart->items()->where('product_id', $product->id)->first();

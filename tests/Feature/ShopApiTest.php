@@ -105,6 +105,33 @@ class ShopApiTest extends TestCase
         $this->assertDatabaseCount('cart_items', 0);
     }
 
+    public function test_adding_to_cart_releases_stale_unpaid_inventory_reservations(): void
+    {
+        $this->seed([CategorySeeder::class, ProductSeeder::class]);
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $product = Product::query()->firstOrFail();
+        $product->update(['stock' => 0]);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => $product->price,
+        ]);
+        $order->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'price' => $product->price,
+        ]);
+        $order->forceFill(['created_at' => now()->subHour()])->save();
+
+        $this->postJson('/api/cart/items', ['product_id' => $product->id, 'quantity' => 1])
+            ->assertCreated()
+            ->assertJsonPath('items.0.quantity', 1);
+
+        $this->assertSame('cancelled', $order->fresh()->status);
+        $this->assertSame(1, $product->fresh()->stock);
+    }
+
     public function test_user_can_create_view_and_cancel_an_order(): void
     {
         $this->seed([CategorySeeder::class, ProductSeeder::class]);
@@ -351,6 +378,7 @@ class ShopApiTest extends TestCase
         $this->postJson('/api/orders/'.$order->id.'/payway-payment')
             ->assertServiceUnavailable()
             ->assertJsonPath('message', 'ABA PayWay is not enabled. Set PAYWAY_ENABLED=true after adding your merchant credentials.');
+        $this->assertSame('cancelled', $order->fresh()->status);
     }
 
     public function test_individual_account_type_uses_solo_merchant_tag_even_when_merchant_fields_exist(): void

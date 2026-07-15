@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Services\AbaPayWay;
 use App\Services\BakongKhqr;
+use App\Services\OrderInventory;
 use Endroid\QrCode\Encoding\Encoding;
 use Endroid\QrCode\ErrorCorrectionLevel;
 use Endroid\QrCode\QrCode;
@@ -23,7 +24,7 @@ use RuntimeException;
 
 class PaymentController extends Controller
 {
-    public function store(Request $request, Order $order, BakongKhqr $khqr): JsonResponse
+    public function store(Request $request, Order $order, BakongKhqr $khqr, OrderInventory $inventory): JsonResponse
     {
         $this->ensureOrderOwnership($request, $order);
 
@@ -48,6 +49,7 @@ class PaymentController extends Controller
                 'ORDER-'.$order->id
             );
         } catch (InvalidArgumentException $exception) {
+            $inventory->release($order);
             abort(503, $exception->getMessage());
         }
 
@@ -71,7 +73,7 @@ class PaymentController extends Controller
         return $this->paymentResponse($payment, 201);
     }
 
-    public function storePayWay(Request $request, Order $order, AbaPayWay $payWay): JsonResponse
+    public function storePayWay(Request $request, Order $order, AbaPayWay $payWay, OrderInventory $inventory): JsonResponse
     {
         $this->ensureOrderOwnership($request, $order);
 
@@ -86,6 +88,7 @@ class PaymentController extends Controller
             abort_unless(in_array($currency, ['USD', 'KHR'], true), 503, 'PAYWAY_CURRENCY must be USD or KHR.');
             $amount = $this->paymentAmount((float) $order->total, $currency);
         } catch (RuntimeException $exception) {
+            $inventory->release($order);
             abort(503, $exception->getMessage());
         }
 
@@ -114,13 +117,14 @@ class PaymentController extends Controller
         try {
             $checkout = $payWay->checkout($payment, $order);
         } catch (RuntimeException $exception) {
+            $inventory->release($order);
             abort(503, $exception->getMessage());
         }
 
         return $this->paymentResponse($payment, 201, ['checkout' => $checkout]);
     }
 
-    public function storePayWayQr(Request $request, Order $order, AbaPayWay $payWay): JsonResponse
+    public function storePayWayQr(Request $request, Order $order, AbaPayWay $payWay, OrderInventory $inventory): JsonResponse
     {
         $this->ensureOrderOwnership($request, $order);
 
@@ -135,6 +139,7 @@ class PaymentController extends Controller
             abort_unless(in_array($currency, ['USD', 'KHR'], true), 503, 'PAYWAY_CURRENCY must be USD or KHR.');
             $amount = $this->paymentAmount((float) $order->total, $currency);
         } catch (RuntimeException $exception) {
+            $inventory->release($order);
             abort(503, $exception->getMessage());
         }
 
@@ -177,7 +182,7 @@ class PaymentController extends Controller
         try {
             $qr = $payWay->generateQr($payment, $order);
         } catch (RuntimeException $exception) {
-            $payment->delete();
+            $inventory->release($order);
             abort(502, $exception->getMessage());
         }
 

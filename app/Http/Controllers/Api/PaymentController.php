@@ -32,14 +32,16 @@ class PaymentController extends Controller
         $payment = $order->payment;
         if ($payment?->status === 'pending'
             && $payment->expires_at->isFuture()
-            && $khqr->matchesConfiguredAccountType($payment->khqr_payload)) {
+            && $khqr->matchesConfiguredReceiver($payment->khqr_payload)) {
             return $this->paymentResponse($payment);
         }
 
         try {
+            $currency = strtoupper(config('services.bakong.currency', 'USD'));
+            $amount = $this->paymentAmount((float) $order->total, $currency);
             $generated = $khqr->generate(
-                (string) $order->total,
-                config('services.bakong.currency', 'USD'),
+                $amount,
+                $currency,
                 'ORDER-'.$order->id
             );
         } catch (InvalidArgumentException $exception) {
@@ -51,8 +53,8 @@ class PaymentController extends Controller
             [
                 'provider' => 'bakong',
                 'status' => 'pending',
-                'amount' => $order->total,
-                'currency' => strtoupper(config('services.bakong.currency', 'USD')),
+                'amount' => $amount,
+                'currency' => $currency,
                 'khqr_payload' => $generated['payload'],
                 'md5' => $generated['md5'],
                 'transaction_hash' => null,
@@ -75,13 +77,18 @@ class PaymentController extends Controller
     public function qr(Request $request, Payment $payment, BakongKhqr $khqr): Response
     {
         $this->ensurePaymentOwnership($request, $payment);
-        if (! $khqr->matchesConfiguredAccountType($payment->khqr_payload)) {
+        if (! $khqr->matchesConfiguredReceiver($payment->khqr_payload)) {
+            $currency = strtoupper(config('services.bakong.currency', 'USD'));
+            $orderTotal = (float) $payment->order()->value('total');
+            $amount = $this->paymentAmount($orderTotal, $currency);
             $generated = $khqr->generate(
-                (string) $payment->amount,
-                $payment->currency,
+                $amount,
+                $currency,
                 'ORDER-'.$payment->order_id
             );
             $payment->update([
+                'amount' => $amount,
+                'currency' => $currency,
                 'khqr_payload' => $generated['payload'],
                 'md5' => $generated['md5'],
                 'status' => 'pending',
@@ -163,6 +170,27 @@ class PaymentController extends Controller
         $receiverMatches = $receiver === null || $receiver === config('services.bakong.account_id');
 
         abort_unless($amountMatches && $currencyMatches && $receiverMatches, 409, 'Bakong transaction details do not match this payment.');
+    }
+
+    private function paymentAmount(float $orderTotal, string $paymentCurrency): string
+    {
+        $shopCurrency = strtoupper((string) config('services.bakong.shop_currency', 'USD'));
+        if ($shopCurrency === $paymentCurrency) {
+            return $paymentCurrency === 'KHR'
+                ? (string) round($orderTotal)
+                : number_format($orderTotal, 2, '.', '');
+        }
+
+        $rate = (float) config('services.bakong.usd_to_khr_rate', 4026);
+        abort_unless($rate > 0, 503, 'BAKONG_USD_TO_KHR_RATE must be greater than zero.');
+        if ($shopCurrency === 'USD' && $paymentCurrency === 'KHR') {
+            return (string) round($orderTotal * $rate);
+        }
+        if ($shopCurrency === 'KHR' && $paymentCurrency === 'USD') {
+            return number_format($orderTotal / $rate, 2, '.', '');
+        }
+
+        abort(503, 'SHOP_CURRENCY and BAKONG_CURRENCY must be USD or KHR.');
     }
 
     private function ensureOrderOwnership(Request $request, Order $order): void

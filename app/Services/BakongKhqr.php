@@ -6,13 +6,32 @@ use InvalidArgumentException;
 
 class BakongKhqr
 {
-    public function matchesConfiguredAccountType(string $payload): bool
+    public function matchesConfiguredReceiver(string $payload): bool
     {
         $accountType = strtolower((string) config('services.bakong.account_type', 'individual'));
         $expectedTag = $accountType === 'merchant' ? '30' : '29';
+        $topLevel = $this->parseTags($payload);
+        if (! isset($topLevel[$expectedTag]) || ! isset($topLevel['99'])) {
+            return false;
+        }
+        $expectedCurrency = strtoupper((string) config('services.bakong.currency', 'USD')) === 'KHR' ? '116' : '840';
+        if (($topLevel['53'] ?? null) !== $expectedCurrency) {
+            return false;
+        }
 
-        return substr($payload, 12, 2) === $expectedTag
-            && str_contains($payload, '99340013');
+        $accountInfo = $this->parseTags($topLevel[$expectedTag]);
+        $timestampInfo = $this->parseTags($topLevel['99']);
+        if (($accountInfo['00'] ?? null) !== trim((string) config('services.bakong.account_id'))
+            || ! isset($timestampInfo['00'], $timestampInfo['01'])) {
+            return false;
+        }
+
+        if ($accountType === 'merchant') {
+            return ($accountInfo['01'] ?? null) === trim((string) config('services.bakong.merchant_id'))
+                && ($accountInfo['02'] ?? null) === trim((string) config('services.bakong.acquiring_bank'));
+        }
+
+        return true;
     }
 
     public function generate(string $amount, string $currency, string $billNumber): array
@@ -91,6 +110,28 @@ class BakongKhqr
         }
 
         return $tag.str_pad((string) $length, 2, '0', STR_PAD_LEFT).$value;
+    }
+
+    private function parseTags(string $payload): array
+    {
+        $tags = [];
+        $offset = 0;
+        $payloadLength = strlen($payload);
+        while ($offset + 4 <= $payloadLength) {
+            $tag = substr($payload, $offset, 2);
+            $lengthValue = substr($payload, $offset + 2, 2);
+            if (! ctype_digit($tag.$lengthValue)) {
+                break;
+            }
+            $length = (int) $lengthValue;
+            if ($offset + 4 + $length > $payloadLength) {
+                break;
+            }
+            $tags[$tag] = substr($payload, $offset + 4, $length);
+            $offset += 4 + $length;
+        }
+
+        return $tags;
     }
 
     private function requiredConfig(string $key, int $maxLength): string

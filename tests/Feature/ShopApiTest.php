@@ -261,6 +261,14 @@ class ShopApiTest extends TestCase
 
         $this->assertSame('29', substr($individualPayment['khqr'], 12, 2));
         $this->assertNotSame($merchantPayment['md5'], $individualPayment['md5']);
+
+        config()->set('services.bakong.account_id', 'another-shop@bank');
+        $newReceiverPayment = $this->postJson('/api/orders/'.$order->id.'/payment')
+            ->assertCreated()
+            ->assertJsonPath('id', $merchantPayment['id'])
+            ->json();
+        $this->assertStringContainsString('another-shop@bank', $newReceiverPayment['khqr']);
+        $this->assertNotSame($individualPayment['md5'], $newReceiverPayment['md5']);
         $this->assertDatabaseCount('payments', 1);
     }
 
@@ -286,6 +294,29 @@ class ShopApiTest extends TestCase
         $stored = Payment::query()->findOrFail($payment['id']);
         $this->assertSame('29', substr($stored->khqr_payload, 12, 2));
         $this->assertNotSame($payment['md5'], $stored->md5);
+    }
+
+    public function test_usd_shop_total_is_converted_when_bakong_receiver_uses_khr(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 2.50,
+        ]);
+        config()->set('services.bakong.shop_currency', 'USD');
+        config()->set('services.bakong.currency', 'KHR');
+        config()->set('services.bakong.usd_to_khr_rate', 4000);
+
+        $payment = $this->postJson('/api/orders/'.$order->id.'/payment')
+            ->assertCreated()
+            ->assertJsonPath('currency', 'KHR')
+            ->assertJsonPath('amount', '10000.00')
+            ->json();
+
+        $this->assertStringContainsString('5303116', $payment['khqr']);
+        $this->assertStringContainsString('540510000', $payment['khqr']);
     }
 
     public function test_only_admin_can_manage_categories_and_products(): void

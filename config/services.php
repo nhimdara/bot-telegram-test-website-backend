@@ -53,7 +53,9 @@ return [
         'store_label' => env('BAKONG_STORE_LABEL'),
         'terminal_label' => env('BAKONG_TERMINAL_LABEL'),
         'mcc' => env('BAKONG_MCC', '5999'),
+        'shop_currency' => env('SHOP_CURRENCY', 'USD'),
         'currency' => env('BAKONG_CURRENCY', 'USD'),
+        'usd_to_khr_rate' => (float) env('BAKONG_USD_TO_KHR_RATE', 4026),
         'qr_expiry_minutes' => (int) env('BAKONG_QR_EXPIRY_MINUTES', 15),
     ],
 

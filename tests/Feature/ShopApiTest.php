@@ -293,6 +293,7 @@ class ShopApiTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('provider', 'payway')
             ->assertJsonPath('amount', '8.50')
+            ->assertJsonPath('environment', 'sandbox')
             ->assertJsonPath('qr.string', '000201010212PAYWAYKHQR6304ABCD')
             ->assertJsonPath('qr.image', 'data:image/png;base64,ZmFrZS1xcg==')
             ->assertJsonPath('qr.deeplink', 'abamobilebank://ababank.com?type=payway');

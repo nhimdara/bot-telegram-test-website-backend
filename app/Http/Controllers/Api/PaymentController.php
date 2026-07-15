@@ -422,6 +422,9 @@ class PaymentController extends Controller
                 'qr_url' => route('payments.qr', $payment),
             ];
         } elseif ($payment->provider === 'payway' && $payment->payway_qr_string) {
+            $data['environment'] = str_contains((string) config('services.payway.base_url'), 'sandbox')
+                ? 'sandbox'
+                : 'production';
             $data['qr'] = [
                 'string' => $payment->payway_qr_string,
                 'image' => $payment->payway_qr_image,

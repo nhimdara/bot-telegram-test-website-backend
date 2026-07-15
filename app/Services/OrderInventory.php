@@ -31,11 +31,28 @@ class OrderInventory
         $orders = Order::query()
             ->where('user_id', $userId)
             ->where('status', 'pending')
-            ->where('created_at', '<=', now()->subMinutes($minutes))
-            ->where(function ($query) {
-                $query->whereDoesntHave('payment')
-                    ->orWhereHas('payment', fn ($payment) => $payment->whereIn('status', ['expired', 'cancelled']));
+            ->where(function ($query) use ($minutes) {
+                $query->where(function ($query) use ($minutes) {
+                    $query->whereDoesntHave('payment')
+                        ->where('created_at', '<=', now()->subMinutes($minutes));
+                })->orWhereHas('payment', function ($payment) {
+                    $payment->whereIn('status', ['expired', 'cancelled'])
+                        ->orWhere(function ($payment) {
+                            $payment->where('status', 'pending')
+                                ->where('expires_at', '<=', now());
+                        });
+                });
             })
+            ->get();
+
+        return $orders->sum(fn (Order $order) => $this->release($order) ? 1 : 0);
+    }
+
+    public function releasePendingForUser(int $userId): int
+    {
+        $orders = Order::query()
+            ->where('user_id', $userId)
+            ->where('status', 'pending')
             ->get();
 
         return $orders->sum(fn (Order $order) => $this->release($order) ? 1 : 0);

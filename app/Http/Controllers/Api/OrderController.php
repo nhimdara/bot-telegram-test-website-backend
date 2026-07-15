@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\OrderInventory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,12 +32,15 @@ class OrderController extends Controller
         return response()->json($order->load(['items.product', 'payment']));
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, OrderInventory $inventory): JsonResponse
     {
         $data = $request->validate([
             'address' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        // Starting a new checkout supersedes this customer's older pending QR.
+        $inventory->releasePendingForUser($request->user()->id);
 
         $order = DB::transaction(function () use ($request, $data) {
             $cart = Cart::query()->where('user_id', $request->user()->id)->lockForUpdate()->first();

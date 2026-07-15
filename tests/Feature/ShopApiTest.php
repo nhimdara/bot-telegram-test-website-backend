@@ -123,13 +123,64 @@ class ShopApiTest extends TestCase
             'price' => $product->price,
         ]);
         $order->forceFill(['created_at' => now()->subHour()])->save();
+        $expiredOrder = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => $product->price,
+        ]);
+        $expiredOrder->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'price' => $product->price,
+        ]);
+        $expiredOrder->payment()->create([
+            'provider' => 'bakong',
+            'status' => 'pending',
+            'amount' => $product->price,
+            'currency' => 'USD',
+            'khqr_payload' => 'expired-test-qr',
+            'md5' => md5('expired-test-qr'),
+            'expires_at' => now()->subMinute(),
+        ]);
 
         $this->postJson('/api/cart/items', ['product_id' => $product->id, 'quantity' => 1])
             ->assertCreated()
             ->assertJsonPath('items.0.quantity', 1);
 
         $this->assertSame('cancelled', $order->fresh()->status);
-        $this->assertSame(1, $product->fresh()->stock);
+        $this->assertSame('cancelled', $expiredOrder->fresh()->status);
+        $this->assertSame(2, $product->fresh()->stock);
+    }
+
+    public function test_starting_a_new_checkout_replaces_the_users_previous_pending_order(): void
+    {
+        $this->seed([CategorySeeder::class, ProductSeeder::class]);
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $product = Product::query()->firstOrFail();
+        $originalStock = $product->stock;
+        $this->postJson('/api/cart/items', ['product_id' => $product->id, 'quantity' => 1])->assertCreated();
+
+        $oldOrder = $user->orders()->create([
+            'address' => 'Old checkout',
+            'status' => 'pending',
+            'total' => $product->price,
+        ]);
+        $oldOrder->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'price' => $product->price,
+        ]);
+        $product->decrement('stock');
+
+        $newOrder = $this->postJson('/api/orders', ['address' => 'New checkout'])
+            ->assertCreated()
+            ->json();
+
+        $this->assertSame('cancelled', $oldOrder->fresh()->status);
+        $this->assertDatabaseHas('orders', ['id' => $newOrder['id'], 'status' => 'pending']);
+        $this->assertSame($originalStock - 1, $product->fresh()->stock);
+        $this->assertSame(1, $user->orders()->where('status', 'pending')->count());
     }
 
     public function test_user_can_create_view_and_cancel_an_order(): void

@@ -299,6 +299,21 @@ class ShopApiTest extends TestCase
 
         Http::assertSent(function ($request) use ($response) {
             $callbackUrl = base64_decode((string) $request['callback_url'], true);
+            $fields = $request->data();
+            $hash = $fields['hash'];
+            unset($fields['hash']);
+            $hashOrder = [
+                'req_time', 'merchant_id', 'tran_id', 'amount', 'items',
+                'first_name', 'last_name', 'email', 'phone', 'purchase_type',
+                'payment_option', 'callback_url', 'return_deeplink', 'currency',
+                'custom_fields', 'return_params', 'payout', 'lifetime',
+                'qr_image_template',
+            ];
+            $canonical = implode('', array_map(
+                static fn (string $key) => (string) ($fields[$key] ?? ''),
+                $hashOrder
+            ));
+            $expectedHash = base64_encode(hash_hmac('sha512', $canonical, 'test-api-key', true));
 
             return $request->url() === 'https://checkout-sandbox.payway.test/api/payment-gateway/v1/payments/generate-qr'
                 && $request->isJson()
@@ -307,7 +322,10 @@ class ShopApiTest extends TestCase
                 && $request['payment_option'] === 'abapay_khqr'
                 && $request['currency'] === 'USD'
                 && $request['amount'] === 8.5
-                && is_string($request['hash'])
+                && hash_equals($expectedHash, $hash)
+                && array_key_exists('return_deeplink', $fields)
+                && array_key_exists('custom_fields', $fields)
+                && array_key_exists('payout', $fields)
                 && str_contains((string) $callbackUrl, '/api/payway/callback/'.$response->json('id'));
         });
 

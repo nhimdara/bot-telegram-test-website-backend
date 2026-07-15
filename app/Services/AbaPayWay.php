@@ -117,11 +117,26 @@ class AbaPayWay
             'items' => $items,
             'currency' => $payment->currency,
             'callback_url' => base64_encode($callbackUrl),
+            'return_deeplink' => null,
+            'custom_fields' => null,
             'return_params' => (string) $payment->id,
+            'payout' => null,
             'lifetime' => $lifetime,
             'qr_image_template' => (string) config('services.payway.qr_image_template', 'template3_color'),
         ];
-        $fields['hash'] = $this->sign(implode('', array_map(static fn ($value) => (string) $value, $fields)));
+        // ABA's QR API signs values in this canonical order (which differs from
+        // the display order in its JSON request example).
+        $hashOrder = [
+            'req_time', 'merchant_id', 'tran_id', 'amount', 'items',
+            'first_name', 'last_name', 'email', 'phone', 'purchase_type',
+            'payment_option', 'callback_url', 'return_deeplink', 'currency',
+            'custom_fields', 'return_params', 'payout', 'lifetime',
+            'qr_image_template',
+        ];
+        $fields['hash'] = $this->sign(implode('', array_map(
+            static fn (string $key) => (string) ($fields[$key] ?? ''),
+            $hashOrder
+        )));
 
         try {
             $response = Http::acceptJson()

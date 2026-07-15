@@ -154,6 +154,25 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS order_items_order_id_index ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS order_items_product_id_index ON order_items(product_id);
 
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+    provider VARCHAR(255) NOT NULL DEFAULT 'bakong',
+    status VARCHAR(255) NOT NULL DEFAULT 'pending',
+    amount NUMERIC(10, 2) NOT NULL,
+    currency VARCHAR(3) NOT NULL,
+    khqr_payload TEXT NOT NULL,
+    md5 VARCHAR(32) NOT NULL UNIQUE,
+    transaction_hash VARCHAR(255) NULL UNIQUE,
+    provider_response JSON NULL,
+    expires_at TIMESTAMP NOT NULL,
+    paid_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS payments_status_index ON payments(status);
+
 CREATE TABLE IF NOT EXISTS personal_access_tokens (
     id BIGSERIAL PRIMARY KEY,
     tokenable_type VARCHAR(255) NOT NULL,
@@ -182,7 +201,8 @@ INSERT INTO migrations (migration, batch) VALUES
     ('2026_07_15_000005_create_orders_table', 1),
     ('2026_07_15_000006_create_order_items_table', 1),
     ('2026_07_15_000007_create_personal_access_tokens_table', 1),
-    ('2026_07_15_000008_add_shop_unique_indexes', 1)
+    ('2026_07_15_000008_add_shop_unique_indexes', 1),
+    ('2026_07_15_000009_create_payments_table', 1)
 ON CONFLICT (migration) DO NOTHING;
 
 COMMIT;

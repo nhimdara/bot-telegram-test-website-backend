@@ -17,7 +17,7 @@ class OrderController extends Controller
     {
         $orders = Order::query()
             ->where('user_id', $request->user()->id)
-            ->with('items.product')
+            ->with(['items.product', 'payment'])
             ->latest()
             ->get();
 
@@ -28,7 +28,7 @@ class OrderController extends Controller
     {
         $this->ensureOwnership($request, $order);
 
-        return response()->json($order->load('items.product'));
+        return response()->json($order->load(['items.product', 'payment']));
     }
 
     public function store(Request $request): JsonResponse
@@ -85,7 +85,7 @@ class OrderController extends Controller
             return $order;
         });
 
-        return response()->json($order->load('items.product'), 201);
+        return response()->json($order->load(['items.product', 'payment']), 201);
     }
 
     public function cancel(Request $request, Order $order): JsonResponse
@@ -105,9 +105,10 @@ class OrderController extends Controller
                 Product::query()->whereKey($item->product_id)->increment('stock', $item->quantity);
             }
             $lockedOrder->update(['status' => 'cancelled']);
+            $lockedOrder->payment()->where('status', 'pending')->update(['status' => 'cancelled']);
         });
 
-        return response()->json($order->fresh()->load('items.product'));
+        return response()->json($order->fresh()->load(['items.product', 'payment']));
     }
 
     private function ensureOwnership(Request $request, Order $order): void

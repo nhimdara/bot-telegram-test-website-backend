@@ -41,6 +41,9 @@ Authenticated endpoints:
 - `POST /api/orders`
 - `GET /api/orders` and `GET /api/orders/{id}`
 - `POST /api/orders/{id}/cancel`
+- `POST /api/orders/{id}/payment` creates or returns a pending Bakong KHQR payment
+- `GET /api/payments/{id}` and `GET /api/payments/{id}/qr`
+- `POST /api/payments/{id}/check` verifies payment directly with Bakong
 - `GET /api/profile`
 
 Run the test suite with `php artisan test`.
@@ -64,3 +67,9 @@ pgAdmin is available at `http://localhost:5050`. The default development login i
 - Password: the `DB_PASSWORD` value from `.env`
 
 On Render, attach a managed PostgreSQL database and set its internal connection URL as `DATABASE_URL` (or `DB_URL`). Apache automatically binds to Render's runtime `PORT` variable.
+
+## Bakong KHQR
+
+Register at the Bakong Open API portal and configure `BAKONG_TOKEN`, `BAKONG_ACCOUNT_ID`, and `BAKONG_MERCHANT_NAME`. Optional merchant-mode fields are `BAKONG_MERCHANT_ID` and `BAKONG_ACQUIRING_BANK`; provide both together. The configured `BAKONG_CURRENCY` must match the currency used for product prices.
+
+The frontend creates an order first, calls `POST /api/orders/{id}/payment`, displays the authenticated `qr_url` response, and polls `POST /api/payments/{id}/check`. A frontend callback alone never marks an order paid; the backend verifies the MD5 with Bakong and validates recipient, currency, and amount.

@@ -17,6 +17,7 @@ RUN apt-get update \
         libonig-dev \
         libpq-dev \
         libsqlite3-dev \
+        libxml2-dev \
         libzip-dev \
         unzip \
     && docker-php-ext-install -j$(nproc) \
@@ -27,6 +28,7 @@ RUN apt-get update \
         pdo_mysql \
         pdo_pgsql \
         pdo_sqlite \
+        simplexml \
         zip \
     && a2enmod headers rewrite \
     && rm -rf /var/lib/apt/lists/*

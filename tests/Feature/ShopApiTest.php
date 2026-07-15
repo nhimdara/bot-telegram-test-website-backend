@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\CartItem;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use Database\Seeders\CategorySeeder;
 use Database\Seeders\ProductSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -22,6 +24,20 @@ class ShopApiTest extends TestCase
         parent::setUp();
         config()->set('services.telegram.bot_token', self::BOT_TOKEN);
         config()->set('services.telegram.auth_max_age', 86400);
+        config()->set('services.bakong', [
+            'api_url' => 'https://api-bakong.example',
+            'token' => 'test-bakong-token',
+            'account_id' => 'shop@bank',
+            'merchant_name' => 'Telegram Shop',
+            'merchant_city' => 'Phnom Penh',
+            'merchant_id' => null,
+            'acquiring_bank' => null,
+            'store_label' => 'Online Shop',
+            'terminal_label' => 'Web',
+            'mcc' => '5999',
+            'currency' => 'USD',
+            'qr_expiry_minutes' => 15,
+        ]);
     }
 
     public function test_user_can_authenticate_with_valid_telegram_init_data(): void
@@ -133,6 +149,76 @@ class ShopApiTest extends TestCase
         $user = User::factory()->create(['telegram_id' => '77']);
         Sanctum::actingAs($user);
         $this->getJson('/api/profile')->assertOk()->assertJsonPath('telegram_id', '77');
+    }
+
+    public function test_user_can_create_bakong_qr_and_verify_matching_payment(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 12.50,
+        ]);
+
+        $paymentResponse = $this->postJson('/api/orders/'.$order->id.'/payment')
+            ->assertCreated()
+            ->assertJsonPath('amount', '12.50')
+            ->assertJsonPath('currency', 'USD')
+            ->assertJsonPath('status', 'pending')
+            ->assertJsonStructure(['id', 'md5', 'khqr', 'qr_url', 'expires_at']);
+        $payment = $paymentResponse->json();
+
+        $this->get('/api/payments/'.$payment['id'].'/qr')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/svg+xml')
+            ->assertSee('<svg', false);
+
+        Http::fake([
+            'https://api-bakong.example/v1/check_transaction_by_md5' => Http::response([
+                'responseCode' => 0,
+                'responseMessage' => 'Success',
+                'data' => [
+                    'hash' => str_repeat('a', 64),
+                    'toAccountId' => 'shop@bank',
+                    'currency' => 'USD',
+                    'amount' => 12.50,
+                ],
+            ]),
+        ]);
+
+        $this->postJson('/api/payments/'.$payment['id'].'/check')
+            ->assertOk()
+            ->assertJsonPath('status', 'paid');
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'paid']);
+
+        Sanctum::actingAs(User::factory()->create());
+        $this->getJson('/api/payments/'.$payment['id'])->assertNotFound();
+    }
+
+    public function test_user_can_renew_an_expired_bakong_qr_without_creating_another_payment(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 8.25,
+        ]);
+
+        $original = $this->postJson('/api/orders/'.$order->id.'/payment')->assertCreated()->json();
+        Payment::query()->findOrFail($original['id'])->update(['expires_at' => now()->subMinute()]);
+        $this->travel(1)->seconds();
+
+        $renewed = $this->postJson('/api/orders/'.$order->id.'/payment')
+            ->assertCreated()
+            ->assertJsonPath('id', $original['id'])
+            ->assertJsonPath('status', 'pending')
+            ->json();
+
+        $this->assertNotSame($original['md5'], $renewed['md5']);
+        $this->assertDatabaseCount('payments', 1);
+        $this->assertTrue(Payment::query()->findOrFail($original['id'])->expires_at->isFuture());
     }
 
     private function telegramInitData(int $id, string $firstName, string $lastName): string

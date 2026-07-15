@@ -40,4 +40,19 @@ return [
         'auth_max_age' => (int) env('TELEGRAM_AUTH_MAX_AGE', 86400),
     ],
 
+    'bakong' => [
+        'api_url' => env('BAKONG_API_URL', 'https://api-bakong.nbc.gov.kh'),
+        'token' => env('BAKONG_TOKEN'),
+        'account_id' => env('BAKONG_ACCOUNT_ID'),
+        'merchant_name' => env('BAKONG_MERCHANT_NAME'),
+        'merchant_city' => env('BAKONG_MERCHANT_CITY', 'Phnom Penh'),
+        'merchant_id' => env('BAKONG_MERCHANT_ID'),
+        'acquiring_bank' => env('BAKONG_ACQUIRING_BANK'),
+        'store_label' => env('BAKONG_STORE_LABEL'),
+        'terminal_label' => env('BAKONG_TERMINAL_LABEL'),
+        'mcc' => env('BAKONG_MCC', '5999'),
+        'currency' => env('BAKONG_CURRENCY', 'USD'),
+        'qr_expiry_minutes' => (int) env('BAKONG_QR_EXPIRY_MINUTES', 15),
+    ],
+
 ];

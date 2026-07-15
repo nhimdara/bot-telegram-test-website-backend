@@ -107,6 +107,7 @@ class PaymentController extends Controller
 
         return response($svg, 200, [
             'Content-Type' => 'image/svg+xml',
+            'Content-Disposition' => 'inline; filename="khqr-order-'.$payment->order_id.'.svg"',
             'Cache-Control' => 'private, no-store',
             'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'",
         ]);

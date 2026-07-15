@@ -6,26 +6,38 @@ use InvalidArgumentException;
 
 class BakongKhqr
 {
+    public function matchesConfiguredAccountType(string $payload): bool
+    {
+        $accountType = strtolower((string) config('services.bakong.account_type', 'individual'));
+        $expectedTag = $accountType === 'merchant' ? '30' : '29';
+
+        return substr($payload, 12, 2) === $expectedTag;
+    }
+
     public function generate(string $amount, string $currency, string $billNumber): array
     {
         $accountId = $this->requiredConfig('account_id', 32);
         $merchantName = $this->requiredConfig('merchant_name', 25);
         $merchantCity = $this->value(config('services.bakong.merchant_city', 'Phnom Penh'), 15, 'Merchant city');
         $currency = strtoupper($currency);
+        $accountType = strtolower((string) config('services.bakong.account_type', 'individual'));
 
         if (! in_array($currency, ['USD', 'KHR'], true)) {
             throw new InvalidArgumentException('Bakong currency must be USD or KHR.');
         }
+        if (! in_array($accountType, ['individual', 'merchant'], true)) {
+            throw new InvalidArgumentException('BAKONG_ACCOUNT_TYPE must be individual or merchant.');
+        }
 
         $merchantId = config('services.bakong.merchant_id');
         $acquiringBank = config('services.bakong.acquiring_bank');
-        if ((bool) $merchantId !== (bool) $acquiringBank) {
+        if ($accountType === 'merchant' && (! $merchantId || ! $acquiringBank)) {
             throw new InvalidArgumentException('BAKONG_MERCHANT_ID and BAKONG_ACQUIRING_BANK must be configured together.');
         }
         $accountInfo = $this->tag('00', $accountId);
         $accountTag = '29';
 
-        if ($merchantId && $acquiringBank) {
+        if ($accountType === 'merchant') {
             $accountTag = '30';
             $accountInfo .= $this->tag('01', $this->value($merchantId, 32, 'Merchant ID'));
             $accountInfo .= $this->tag('02', $this->value($acquiringBank, 32, 'Acquiring bank'));

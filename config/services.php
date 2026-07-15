@@ -43,6 +43,7 @@ return [
     'bakong' => [
         'api_url' => env('BAKONG_API_URL', 'https://api-bakong.nbc.gov.kh'),
         'token' => env('BAKONG_TOKEN'),
+        'account_type' => env('BAKONG_ACCOUNT_TYPE', 'individual'),
         'account_id' => env('BAKONG_ACCOUNT_ID'),
         'merchant_name' => env('BAKONG_MERCHANT_NAME'),
         'merchant_city' => env('BAKONG_MERCHANT_CITY', 'Phnom Penh'),

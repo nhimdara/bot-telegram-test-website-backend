@@ -30,7 +30,9 @@ class PaymentController extends Controller
         abort_unless($order->status === 'pending', 422, 'Only pending orders can be paid.');
 
         $payment = $order->payment;
-        if ($payment?->status === 'pending' && $payment->expires_at->isFuture()) {
+        if ($payment?->status === 'pending'
+            && $payment->expires_at->isFuture()
+            && $khqr->matchesConfiguredAccountType($payment->khqr_payload)) {
             return $this->paymentResponse($payment);
         }
 
@@ -70,9 +72,22 @@ class PaymentController extends Controller
         return $this->paymentResponse($payment);
     }
 
-    public function qr(Request $request, Payment $payment): Response
+    public function qr(Request $request, Payment $payment, BakongKhqr $khqr): Response
     {
         $this->ensurePaymentOwnership($request, $payment);
+        if (! $khqr->matchesConfiguredAccountType($payment->khqr_payload)) {
+            $generated = $khqr->generate(
+                (string) $payment->amount,
+                $payment->currency,
+                'ORDER-'.$payment->order_id
+            );
+            $payment->update([
+                'khqr_payload' => $generated['payload'],
+                'md5' => $generated['md5'],
+                'status' => 'pending',
+                'expires_at' => now()->addMinutes(config('services.bakong.qr_expiry_minutes', 15)),
+            ]);
+        }
 
         $qrCode = new QrCode(
             data: $payment->khqr_payload,

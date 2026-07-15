@@ -6,6 +6,7 @@ use App\Models\CartItem;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\BakongKhqr;
 use Database\Seeders\CategorySeeder;
 use Database\Seeders\ProductSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -196,6 +197,18 @@ class ShopApiTest extends TestCase
         $this->getJson('/api/payments/'.$payment['id'])->assertNotFound();
     }
 
+    public function test_individual_account_type_uses_solo_merchant_tag_even_when_merchant_fields_exist(): void
+    {
+        config()->set('services.bakong.account_type', 'individual');
+        config()->set('services.bakong.merchant_id', 'shop@bank');
+        config()->set('services.bakong.acquiring_bank', 'ABC');
+
+        $generated = app(BakongKhqr::class)->generate('1.00', 'USD', 'ORDER-1');
+
+        $this->assertStringStartsWith('00020101021229', $generated['payload']);
+        $this->assertSame('29', substr($generated['payload'], 12, 2));
+    }
+
     public function test_user_can_renew_an_expired_bakong_qr_without_creating_another_payment(): void
     {
         $user = User::factory()->create();
@@ -219,6 +232,56 @@ class ShopApiTest extends TestCase
         $this->assertNotSame($original['md5'], $renewed['md5']);
         $this->assertDatabaseCount('payments', 1);
         $this->assertTrue(Payment::query()->findOrFail($original['id'])->expires_at->isFuture());
+    }
+
+    public function test_payment_is_regenerated_when_the_khqr_account_type_changes(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 2.50,
+        ]);
+        config()->set('services.bakong.account_type', 'merchant');
+        config()->set('services.bakong.merchant_id', 'merchant-123');
+        config()->set('services.bakong.acquiring_bank', 'Test Bank');
+        $merchantPayment = $this->postJson('/api/orders/'.$order->id.'/payment')->assertCreated()->json();
+        $this->assertSame('30', substr($merchantPayment['khqr'], 12, 2));
+
+        config()->set('services.bakong.account_type', 'individual');
+        $individualPayment = $this->postJson('/api/orders/'.$order->id.'/payment')
+            ->assertCreated()
+            ->assertJsonPath('id', $merchantPayment['id'])
+            ->json();
+
+        $this->assertSame('29', substr($individualPayment['khqr'], 12, 2));
+        $this->assertNotSame($merchantPayment['md5'], $individualPayment['md5']);
+        $this->assertDatabaseCount('payments', 1);
+    }
+
+    public function test_qr_image_endpoint_self_heals_a_stored_payment_with_the_old_account_type(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+        $order = $user->orders()->create([
+            'address' => 'Phnom Penh',
+            'status' => 'pending',
+            'total' => 3.00,
+        ]);
+        config()->set('services.bakong.account_type', 'merchant');
+        config()->set('services.bakong.merchant_id', 'merchant-123');
+        config()->set('services.bakong.acquiring_bank', 'Test Bank');
+        $payment = $this->postJson('/api/orders/'.$order->id.'/payment')->assertCreated()->json();
+
+        config()->set('services.bakong.account_type', 'individual');
+        $this->get('/api/payments/'.$payment['id'].'/qr')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/svg+xml');
+
+        $stored = Payment::query()->findOrFail($payment['id']);
+        $this->assertSame('29', substr($stored->khqr_payload, 12, 2));
+        $this->assertNotSame($payment['md5'], $stored->md5);
     }
 
     private function telegramInitData(int $id, string $firstName, string $lastName): string

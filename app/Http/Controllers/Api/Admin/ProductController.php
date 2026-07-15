@@ -101,7 +101,7 @@ class ProductController extends Controller
             'id' => (string) Str::uuid(),
             'mime_type' => $file->getMimeType(),
             'size' => $file->getSize(),
-            'data' => file_get_contents($file->getRealPath()),
+            'data' => base64_encode(file_get_contents($file->getRealPath())),
         ]);
         $data['uploaded_image_id'] = $image->id;
         $data['image_url'] = route('images.show', $image);

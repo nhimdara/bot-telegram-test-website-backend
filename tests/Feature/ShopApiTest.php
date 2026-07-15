@@ -6,6 +6,7 @@ use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\UploadedImage;
 use App\Models\User;
 use App\Services\BakongKhqr;
 use Database\Seeders\CategorySeeder;
@@ -414,6 +415,10 @@ class ShopApiTest extends TestCase
             ->json();
 
         $this->assertDatabaseHas('uploaded_images', ['id' => $product['uploaded_image_id'], 'mime_type' => 'image/png']);
+        $storedImage = UploadedImage::query()->findOrFail($product['uploaded_image_id']);
+        $storedData = is_resource($storedImage->data) ? stream_get_contents($storedImage->data) : $storedImage->data;
+        $this->assertTrue(mb_check_encoding($storedData, 'UTF-8'));
+        $this->assertSame($png, base64_decode($storedData, true));
         $path = parse_url($product['image_url'], PHP_URL_PATH);
         $this->get($path)->assertOk()
             ->assertHeader('Content-Type', 'image/png')

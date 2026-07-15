@@ -10,7 +10,9 @@ class ImageController extends Controller
 {
     public function show(UploadedImage $image): Response
     {
-        $data = is_resource($image->data) ? stream_get_contents($image->data) : $image->data;
+        $stored = is_resource($image->data) ? stream_get_contents($image->data) : $image->data;
+        $decoded = base64_decode($stored, true);
+        $data = $decoded === false ? $stored : $decoded;
 
         return response($data, 200, [
             'Content-Type' => $image->mime_type,

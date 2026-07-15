@@ -46,6 +46,13 @@ Authenticated endpoints:
 - `POST /api/payments/{id}/check` verifies payment directly with Bakong
 - `GET /api/profile`
 
+Administrator endpoints require a user whose Telegram ID is listed in `TELEGRAM_ADMIN_IDS`:
+
+- CRUD: `/api/admin/categories`
+- CRUD: `/api/admin/products`
+
+Use comma-separated numeric Telegram IDs, then authenticate with Telegram again so the role is synchronized. Product deletion is blocked when the product belongs to an order; set its stock to zero instead. Category deletion is blocked until its products are moved or deleted.
+
 Run the test suite with `php artisan test`.
 
 ## Docker

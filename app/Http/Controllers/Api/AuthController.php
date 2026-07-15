@@ -28,6 +28,7 @@ class AuthController extends Controller
         $user->fill([
             'name' => Str::limit($name, 255, ''),
             'email' => $telegramId.'@telegram.local',
+            'is_admin' => in_array($telegramId, config('services.telegram.admin_ids', []), true),
         ]);
         if (! $user->exists) {
             $user->password = Hash::make(Str::random(64));
@@ -40,14 +41,14 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => $user->only(['id', 'telegram_id', 'name', 'email']),
+            'user' => $user->only(['id', 'telegram_id', 'name', 'email', 'is_admin']),
         ]);
     }
 
     public function profile(Request $request)
     {
         return response()->json($request->user()->only([
-            'id', 'telegram_id', 'name', 'email', 'created_at',
+            'id', 'telegram_id', 'name', 'email', 'is_admin', 'created_at',
         ]));
     }
 

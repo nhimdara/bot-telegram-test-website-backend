@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     telegram_id VARCHAR(255) UNIQUE,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     email_verified_at TIMESTAMP NULL,
     password VARCHAR(255) NOT NULL,
     remember_token VARCHAR(100) NULL,
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS products (
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,
     description TEXT NULL,
+    image_url VARCHAR(255) NULL,
     price NUMERIC(10, 2) NOT NULL,
     stock INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NULL,
@@ -202,7 +204,8 @@ INSERT INTO migrations (migration, batch) VALUES
     ('2026_07_15_000006_create_order_items_table', 1),
     ('2026_07_15_000007_create_personal_access_tokens_table', 1),
     ('2026_07_15_000008_add_shop_unique_indexes', 1),
-    ('2026_07_15_000009_create_payments_table', 1)
+    ('2026_07_15_000009_create_payments_table', 1),
+    ('2026_07_15_000010_add_admin_catalog_fields', 1)
 ON CONFLICT (migration) DO NOTHING;
 
 COMMIT;

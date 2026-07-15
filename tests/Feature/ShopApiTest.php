@@ -285,6 +285,44 @@ class ShopApiTest extends TestCase
         $this->assertNotSame($payment['md5'], $stored->md5);
     }
 
+    public function test_only_admin_can_manage_categories_and_products(): void
+    {
+        $customer = User::factory()->create(['is_admin' => false]);
+        Sanctum::actingAs($customer);
+        $this->postJson('/api/admin/categories', ['name' => 'Forbidden'])->assertForbidden();
+
+        $admin = User::factory()->create(['is_admin' => true]);
+        Sanctum::actingAs($admin);
+
+        $category = $this->postJson('/api/admin/categories', ['name' => 'Books'])
+            ->assertCreated()
+            ->assertJsonPath('slug', 'books')
+            ->json();
+
+        $product = $this->postJson('/api/admin/products', [
+            'category_id' => $category['id'],
+            'name' => 'Laravel Handbook',
+            'description' => 'A practical guide.',
+            'image_url' => 'https://example.com/book.jpg',
+            'price' => 24.99,
+            'stock' => 12,
+        ])->assertCreated()
+            ->assertJsonPath('slug', 'laravel-handbook')
+            ->json();
+
+        $this->patchJson('/api/admin/products/'.$product['id'], [
+            'price' => 19.99,
+            'stock' => 20,
+        ])->assertOk()
+            ->assertJsonPath('price', '19.99')
+            ->assertJsonPath('stock', 20);
+
+        $this->getJson('/api/admin/products')->assertOk()
+            ->assertJsonStructure(['data', 'current_page', 'total']);
+        $this->deleteJson('/api/admin/products/'.$product['id'])->assertNoContent();
+        $this->deleteJson('/api/admin/categories/'.$category['id'])->assertNoContent();
+    }
+
     private function telegramInitData(int $id, string $firstName, string $lastName): string
     {
         $fields = [

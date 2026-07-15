@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\Admin\ProductController as AdminProductController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
@@ -33,4 +35,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/payments/{payment}/check', [PaymentController::class, 'check']);
 
     Route::get('/profile', [AuthController::class, 'profile']);
+
+    Route::prefix('admin')->middleware('admin')->group(function () {
+        Route::apiResource('categories', AdminCategoryController::class);
+        Route::apiResource('products', AdminProductController::class);
+    });
 });

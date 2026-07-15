@@ -57,7 +57,7 @@ class PaymentController extends Controller
                 'md5' => $generated['md5'],
                 'transaction_hash' => null,
                 'provider_response' => null,
-                'expires_at' => now()->addMinutes(config('services.bakong.qr_expiry_minutes', 15)),
+                'expires_at' => $generated['expires_at'],
                 'paid_at' => null,
             ]
         );
@@ -85,7 +85,7 @@ class PaymentController extends Controller
                 'khqr_payload' => $generated['payload'],
                 'md5' => $generated['md5'],
                 'status' => 'pending',
-                'expires_at' => now()->addMinutes(config('services.bakong.qr_expiry_minutes', 15)),
+                'expires_at' => $generated['expires_at'],
             ]);
         }
 

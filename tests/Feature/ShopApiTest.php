@@ -169,6 +169,7 @@ class ShopApiTest extends TestCase
             ->assertJsonPath('status', 'pending')
             ->assertJsonStructure(['id', 'md5', 'khqr', 'qr_url', 'expires_at']);
         $payment = $paymentResponse->json();
+        $this->assertStringContainsString('99340013', $payment['khqr']);
 
         $this->get('/api/payments/'.$payment['id'].'/qr')
             ->assertOk()

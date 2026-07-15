@@ -11,11 +11,14 @@ class BakongKhqr
         $accountType = strtolower((string) config('services.bakong.account_type', 'individual'));
         $expectedTag = $accountType === 'merchant' ? '30' : '29';
 
-        return substr($payload, 12, 2) === $expectedTag;
+        return substr($payload, 12, 2) === $expectedTag
+            && str_contains($payload, '99340013');
     }
 
     public function generate(string $amount, string $currency, string $billNumber): array
     {
+        $createdAt = now();
+        $expiresAt = $createdAt->copy()->addMinutes(config('services.bakong.qr_expiry_minutes', 15));
         $accountId = $this->requiredConfig('account_id', 32);
         $merchantName = $this->requiredConfig('merchant_name', 25);
         $merchantCity = $this->value(config('services.bakong.merchant_city', 'Phnom Penh'), 15, 'Merchant city');
@@ -65,12 +68,19 @@ class BakongKhqr
             .$this->tag('59', $merchantName)
             .$this->tag('60', $merchantCity)
             .$this->tag('62', $additionalData)
-            .$this->tag('99', $this->tag('00', (string) now()->getTimestampMs()))
+            .$this->tag('99',
+                $this->tag('00', (string) $createdAt->getTimestampMs())
+                .$this->tag('01', (string) $expiresAt->getTimestampMs())
+            )
             .'6304';
 
         $payload .= $this->crc16($payload);
 
-        return ['payload' => $payload, 'md5' => md5($payload)];
+        return [
+            'payload' => $payload,
+            'md5' => md5($payload),
+            'expires_at' => $expiresAt,
+        ];
     }
 
     private function tag(string $tag, string $value): string

@@ -15,6 +15,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libicu-dev \
         libonig-dev \
+        libpq-dev \
         libsqlite3-dev \
         libzip-dev \
         unzip \
@@ -24,6 +25,7 @@ RUN apt-get update \
         mbstring \
         opcache \
         pdo_mysql \
+        pdo_pgsql \
         pdo_sqlite \
         zip \
     && a2enmod headers rewrite \

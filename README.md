@@ -53,6 +53,14 @@ After configuring `.env`, build and start the API:
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:8000`. SQLite data and Laravel storage are kept in named Docker volumes. Migrations run automatically when the container starts.
+The API will be available at `http://localhost:8000`. PostgreSQL data and Laravel storage are kept in named Docker volumes. Migrations and demo seeders run automatically when the local containers start.
 
-On managed container platforms such as Render, Apache automatically binds to the runtime `PORT` environment variable. For persistent SQLite data, attach a disk at `/var/www/html/database`, or configure an external database for production.
+pgAdmin is available at `http://localhost:5050`. The default development login is `admin@example.com` / `change-me`; change these values in `.env`. Register the database server in pgAdmin with:
+
+- Host: `db`
+- Port: `5432`
+- Maintenance database: `telegram_shop`
+- Username: `telegram_shop`
+- Password: the `DB_PASSWORD` value from `.env`
+
+On Render, attach a managed PostgreSQL database and set its internal connection URL as `DATABASE_URL` (or `DB_URL`). Apache automatically binds to Render's runtime `PORT` variable.

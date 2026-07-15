@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CartItem;
+use App\Models\Category;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
@@ -10,6 +11,7 @@ use App\Services\BakongKhqr;
 use Database\Seeders\CategorySeeder;
 use Database\Seeders\ProductSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -392,6 +394,30 @@ class ShopApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('user.is_admin', true);
         $this->assertDatabaseHas('users', ['telegram_id' => '445566', 'is_admin' => true]);
+    }
+
+    public function test_admin_can_upload_a_product_image_stored_in_the_database(): void
+    {
+        $this->seed([CategorySeeder::class]);
+        Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
+        $category = Category::query()->firstOrFail();
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+        $product = $this->post('/api/admin/products', [
+            'category_id' => $category->id,
+            'name' => 'Uploaded Image Product',
+            'price' => 9.99,
+            'stock' => 3,
+            'image' => UploadedFile::fake()->createWithContent('product.png', $png),
+        ])->assertCreated()
+            ->assertJsonStructure(['id', 'image_url', 'uploaded_image_id'])
+            ->json();
+
+        $this->assertDatabaseHas('uploaded_images', ['id' => $product['uploaded_image_id'], 'mime_type' => 'image/png']);
+        $path = parse_url($product['image_url'], PHP_URL_PATH);
+        $this->get($path)->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
     }
 
     private function telegramInitData(int $id, string $firstName, string $lastName): string
